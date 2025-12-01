@@ -171,200 +171,111 @@ characters <- Animal_Heist_skill_sheet
 
 # UI ---------------------------------------------------------------------------
 
-ui <- fluidPage(
-  
-  tags$head(
-    tags$style(HTML("
-      .story-text {
-        font-family: 'Georgia', serif;
-        font-size: 20px;
-        color: #333;
-        margin-bottom: 10px;
-      }
-      .user-text {
-        font-family: 'Courier New', monospace;
-        font-size: 18px;
-        color: #004080;
-        margin-left: 20px;
-        margin-bottom: 10px;
-      }
-      .response-text {
-        font-family: 'Arial', sans-serif;
-        font-size: 18px;
-        color: #008000;
-        margin-left: 20px;
-        margin-bottom: 15px;
-      }
-      .chat-box {
-        background-color: #f7f7f7;
-        border-radius: 12px;
-        padding: 15px;
-        max-height: 600px;
-        overflow-y: auto;
-      }
-    "))
-  ),
-  
-  sidebarLayout(
-    sidebarPanel(
-      width = 4,
-      
-      selectInput("story_choice", "Choose your story:",
-                  choices = names(stories)),
-      
-      selectInput("character_choice", "Choose your character:",
-                  choices = characters$Character),
-      
-      uiOutput("character_sprite"),
-      
-      textInput("user_input", "What do you do?", ""),
-      actionButton("submit", "Submit"),
-      actionButton("skip", "Skip"),
-      actionButton("quit", "Quit")
-      
+# cf https://shiny.posit.co/blog/posts/shiny-side-of-llms-part-3/
+# I think the play game function could be replaced by https://posit-dev.github.io/shinychat/r/index.html
+library(shiny)
+library(bslib)
+library(ellmer)
+library(shinychat)
+
+ui <- page_fillable(
+  ## General theme and styles
+  theme = bs_theme(bootswatch = "flatly"),
+  layout_sidebar(
+    ## Sidebar content
+    sidebar = sidebar(
+      width = 400,
+      # Open sidebar on mobile devices and show above content
+      open = list(mobile = "always-above"),
+      strong(p("Welcome To Your Adventure!")),
+      p(
+        "Select your game below, then choose your character!"
+      ),
+      selectInput(
+        inputId = "story",
+        label = "Choose which story you want to play",
+        choices = c("Animal Heist", "Demon Hunters 2","A Most Dangerous Ruse")
+      ),
+      selectInput(
+        inputId = "character",
+        label = "Choose which character you want to play as:",
+        choices = c("Rumi", "Mira","Zoey")
+      ),
+      #image(),
+      textAreaInput(
+        inputId = "audience",
+        height = "150px",
+        label = "Describe your audience",
+        placeholder = "e.g. Python and R users who are curious about AI and large language models, but not all of them have a deep technical background"
+      ),
+      numericInput(
+        inputId = "length",
+        label = "Time cap for the presentation (minutes)",
+        value = 10
+      ),
+      textInput(
+        inputId = "type",
+        label = "Type of talk",
+        placeholder = "e.g. lightning talk, workshop, or keynote"
+      ),
+      textInput(
+        inputId = "event",
+        label = "Event name",
+        placeholder = "e.g. posit::conf(2025)"
+      ),
+      input_task_button(
+        id = "submit",
+        label = shiny::tagList(
+          bsicons::bs_icon("robot"),
+          "Analyse presentation"
+        ),
+        label_busy = "DeckCheck is checking...",
+        type = "default"
+      )
     ),
-    
-    mainPanel(
-      div(class = "chat-box",
-          uiOutput("chat_ui")
+    ## Main content
+    layout_column_wrap(
+      fill = FALSE,
+      ### Value boxes for metrics
+      value_box(
+        title = "Showtime",
+        value = "9 minutes",
+        showcase = bsicons::bs_icon("file-slides"),
+        theme = "primary"
+      ),
+      value_box(
+        title = "Code Savviness",
+        value = "15%",
+        showcase = bsicons::bs_icon("file-code"),
+        theme = "primary"
+      ),
+      value_box(
+        title = "Image Presence",
+        value = "7%",
+        showcase = bsicons::bs_icon("file-image"),
+        theme = "primary"
+      )
+    ),
+    layout_column_wrap(
+      fill = FALSE,
+      width = 1 / 2,
+      ### Graph with scoring metrics
+      card(
+        card_header(strong("Scores per category")),
+        p("My beatiful interactive plot...")
+      ),
+      ### Table with suggested improvements
+      card(
+        card_header(strong("Suggested improvements per category")),
+        p("My beatiful table...")
       )
     )
   )
 )
 
-
-# Server -----------------------------------------------------------------------
-
-server <- function(input, output, session){
-  
-  rv <- reactiveValues(
-    story = NULL,
-    character = NULL,
-    character_data = NULL,
-    row = 1,
-    chat = list(),
-    character_prompt = ""
-  )
-  
-  # Update story ---------------------------------------------------------------
-  observeEvent(input$story_choice, {
-    rv$story <- stories[[input$story_choice]]
-    rv$row <- 1
-    rv$chat <- list()
-  })
-  
-  # Update character -----------------------------------------------------------
-  observeEvent(input$character_choice, {
-    rv$character <- input$character_choice
-    rv$character_data <- characters %>% filter(Character == rv$character)
-    
-    rv$character_prompt <- paste0(
-      "The user has chosen the character ", rv$character,
-      " which has the characteristics of ",
-      rv$character_data$Description
-    )
-  })
-  
-  # Character sprite -----------------------------------------------------------
-  output$character_sprite <- renderUI({
-    req(rv$character)
-    img_src <- paste0("characters/", rv$character, ".png")
-    
-    if (file.exists(file.path("www", img_src))) {
-      tags$img(src = img_src, width = "100%")
-    } else {
-      tags$p("No sprite found.")
-    }
-  })
-  
-  # Chat UI renderer ------------------------------------------------------------
-  output$chat_ui <- renderUI({
-    lapply(rv$chat, function(msg){
-      if (msg$type == "story") {
-        div(class = "story-text", msg$text)
-      } else if (msg$type == "user") {
-        div(class = "user-text", paste0("> ", msg$text))
-      } else {
-        div(class = "response-text", msg$text)
-      }
-    })
-  })
-  
-  # Game logic -----------------------------------------------------------------
-  observeEvent(input$submit, {
-    req(rv$story)
-    
-    story_data <- rv$story
-    i <- rv$row
-    
-    # Add story text if newly reached
-    if (length(rv$chat) == 0 || rv$chat[[length(rv$chat)]]$text != story_data$Prompt[i]) {
-      rv$chat <- append(rv$chat, list(list(type = "story", text = story_data$Prompt[i])))
-    }
-    
-    user_input <- input$user_input
-    rv$chat <- append(rv$chat, list(list(type = "user", text = user_input)))
-    
-    context <- paste(
-      rv$character_prompt,
-      sapply(rv$chat, function(x) x$text),
-      collapse = "\n"
-    )
-    
-    goal <- story_data$Goal[i]
-    relevant_skill <- story_data$Relevant_skill[i]
-    relevant_skill_level <- rv$character_data %>%
-      pull(all_of(relevant_skill)) %>%
-      as.numeric()
-    
-    success <- input_evaluation_function(
-      goal = goal,
-      context = context,
-      user_input = user_input,
-      challenge_difficulty = story_data$Difficulty[i],
-      relevant_skill = relevant_skill_level
-    )
-    
-    response <- response_generate_function(
-      goal = goal,
-      context = context,
-      user_input = user_input,
-      success = success
-    )
-    
-    rv$chat <- append(rv$chat, list(list(type = "response", text = response)))
-    
-    if (success) {
-      rv$row <- rv$row + 1
-      
-      if (rv$row > nrow(rv$story)) {
-        rv$chat <- append(rv$chat, list(list(type = "story", text = "The End.")))
-      } else {
-        rv$chat <- append(rv$chat, list(list(type = "story", text = rv$story$Prompt[rv$row])))
-      }
-    }
-    
-    updateTextInput(session, "user_input", value = "")
-  })
-  
-  # Skip button -----------------------------------------------------------------
-  observeEvent(input$skip, {
-    rv$row <- rv$row + 1
-    rv$chat <- append(rv$chat, list(list(type = "story", text = rv$story$Prompt[rv$row])))
-  })
-  
-  # Quit button -----------------------------------------------------------------
-  observeEvent(input$quit, {
-    rv$chat <- append(rv$chat, list(list(type = "story", text = "Goodbye adventurer!")))
-  })
-  
-}
-
-# Run app ----------------------------------------------------------------------
+server <- function(input, output, session) {}
 
 shinyApp(ui, server)
-
-
 
 # Let's Play --------------------------------------------------------------
 
