@@ -159,127 +159,231 @@ library(jsonlite)
 
 # Load story files --------------------------------------------------------------
 
-Animal_Heist_story_sheet <- read_csv("data/Animal Heist/Animal Heist - story sheet.csv")
+story_data <- read_csv("data/Animal Heist/Animal Heist - story sheet.csv")
 Animal_Heist_skill_sheet <- read_csv("data/Animal Heist/Animal Heist - skill sheet.csv")
 
-stories <- list(
-  "Animal Heist" = Animal_Heist_story_sheet
-)
 
-characters <- Animal_Heist_skill_sheet
+# Try to build a chat story bot -------------------------------------------
 
+story_script <- read_csv("data/Animal Heist/Animal Heist - story sheet.csv")
 
-# UI ---------------------------------------------------------------------------
+character <- read_csv("data/Animal Heist/Animal Heist - skill sheet.csv")
 
-# cf https://shiny.posit.co/blog/posts/shiny-side-of-llms-part-3/
-# I think the play game function could be replaced by https://posit-dev.github.io/shinychat/r/index.html
 library(shiny)
+library(coro)
 library(bslib)
-library(ellmer)
 library(shinychat)
 
+# Dumbest chatbot in the world: ignores user input and chooses
+# a random, vague response.
+
+
+play_game <- function(story_data = Animal_Heist_story_sheet,
+                      character_data = Animal_Heist_skill_sheet){
+  yield("Choose your character!")
+  await(async_sleep(0.02))
+  
+  yield(character_data$Character)
+  await(async_sleep(0.02))
+  
+  
+  character_choice_number <- input$chat_user_input
+  
+  
+  character_data_selected <- character_data[character_choice_number,]
+  
+  
+  character_prompt <- paste0("The user has chosen the character :", 
+                             character_data_selected$Character, 
+                             " which has the characteristics of ",
+                             character_data_selected$Description)
+  
+  
+  for(i in 1:nrow(story_data)){
+    current_row <- i
+    yield(story_data$Prompt[i])
+    await(async_sleep(0.02))
+    
+    
+    story_data <- story_data %>%
+      mutate(responses = "")
+    
+    repeat{
+      user_input <- input$chat_user_input
+      
+      if (tolower(input$chat_user_input) == "s") {
+        cat("\nMoving on!\n")
+        break
+      }
+      
+      if (tolower(input$chat_user_input) == "q") {
+        cat("\nGoodbye adventurer!\n")
+        break
+      }
+      
+      context <- paste(character_prompt,
+                       story_data %>%
+                         head(i) %>%
+                         select(`Prompt`,responses) %>%
+                         unlist,
+                       collapse = ""
+      ) 
+      
+      goal <- story_data$Goal[i]
+      
+      relevant_skill = story_data$Relevant_skill[i]
+      
+      relevant_skill_level = character_data_selected %>%
+        select(all_of(relevant_skill)) %>%
+        as.numeric()
+      
+      yield("...thinking...")
+      await(async_sleep(0.02))
+      
+      success <- input_evaluation_function(
+        goal = goal,
+        context = context,
+        user_input = user_input,
+        challenge_difficulty = story_data$Difficulty[i],
+        relevant_skill = relevant_skill_level
+      )
+      
+      response <- response_generate_function(
+        goal = goal,
+        context = context,
+        user_input = user_input,
+        success = success
+      )
+      
+      # Show model explanation
+      
+      print(response)
+      
+      # If successful, break repeat-loop and move to next story row
+      if (isTRUE(success)) {
+        cat("\n✓ Success!\n")
+        story_data$responses[i] <- paste0(story_data$responses[i],response,sep="/n")
+        break
+      }
+      
+      # Otherwise keep looping with the same story row
+      cat("\n✗ Not successful. Try again.\n")
+    }
+    
+    if (tolower(user_input) == "q") {
+      cat("\nEnding adventure.\n")
+      break
+    }
+    
+    if(i == nrow(story_data)){
+      yield("Well, that's all the story there is for now!")
+    }
+  }
+   
+}
+
+
+
+
 ui <- page_fillable(
-  ## General theme and styles
-  theme = bs_theme(bootswatch = "flatly"),
-  layout_sidebar(
-    ## Sidebar content
-    sidebar = sidebar(
-      width = 400,
-      # Open sidebar on mobile devices and show above content
-      open = list(mobile = "always-above"),
-      strong(p("Welcome To Your Adventure!")),
-      p(
-        "Select your game below, then choose your character!"
-      ),
-      selectInput(
-        inputId = "story",
-        label = "Choose which story you want to play",
-        choices = c("Animal Heist", "Demon Hunters 2","A Most Dangerous Ruse")
-      ),
-      selectInput(
-        inputId = "character",
-        label = "Choose which character you want to play as:",
-        choices = c("Rumi", "Mira","Zoey")
-      ),
-      #image(),
-      textAreaInput(
-        inputId = "audience",
-        height = "150px",
-        label = "Describe your audience",
-        placeholder = "e.g. Python and R users who are curious about AI and large language models, but not all of them have a deep technical background"
-      ),
-      numericInput(
-        inputId = "length",
-        label = "Time cap for the presentation (minutes)",
-        value = 10
-      ),
-      textInput(
-        inputId = "type",
-        label = "Type of talk",
-        placeholder = "e.g. lightning talk, workshop, or keynote"
-      ),
-      textInput(
-        inputId = "event",
-        label = "Event name",
-        placeholder = "e.g. posit::conf(2025)"
-      ),
-      input_task_button(
-        id = "submit",
-        label = shiny::tagList(
-          bsicons::bs_icon("robot"),
-          "Analyse presentation"
-        ),
-        label_busy = "DeckCheck is checking...",
-        type = "default"
-      )
-    ),
-    ## Main content
-    layout_column_wrap(
-      fill = FALSE,
-      ### Value boxes for metrics
-      value_box(
-        title = "Showtime",
-        value = "9 minutes",
-        showcase = bsicons::bs_icon("file-slides"),
-        theme = "primary"
-      ),
-      value_box(
-        title = "Code Savviness",
-        value = "15%",
-        showcase = bsicons::bs_icon("file-code"),
-        theme = "primary"
-      ),
-      value_box(
-        title = "Image Presence",
-        value = "7%",
-        showcase = bsicons::bs_icon("file-image"),
-        theme = "primary"
-      )
-    ),
-    layout_column_wrap(
-      fill = FALSE,
-      width = 1 / 2,
-      ### Graph with scoring metrics
-      card(
-        card_header(strong("Scores per category")),
-        p("My beatiful interactive plot...")
-      ),
-      ### Table with suggested improvements
-      card(
-        card_header(strong("Suggested improvements per category")),
-        p("My beatiful table...")
-      )
-    )
-  )
+  chat_ui("chat", fill = TRUE)
 )
 
-server <- function(input, output, session) {}
+server <- function(input, output, session) {
+  
+  game_stage <- reactiveVal("gameplay")
+  character_choice <- reactiveVal(1)
+  script_row <- reactiveVal(0)
+  context <- reactiveVal(base_prompt)
+  
+  chat <- ellmer::chat_ollama(model = "gemma3")
+  
+    # 
+    # if(game_stage()=="character_select"){
+    # chat_append("chat", "Choose Your Character\n\n Input numbers 1-5 to select.") # delivers verbatim output
+    # chat_append("chat",paste0(seq_along(Animal_Heist_skill_sheet$Character),
+    #                           ") ",
+    #                           Animal_Heist_skill_sheet$Character, collapse = "\n"))
+    # 
+    # # update game state
+    # character_choice(as.numeric(input$chat_user_input))
+    # game_stage("gameplay")
+    # # add the character description to context
+    # context(
+    #   paste0(context(),
+    #          Animal_Heist_skill_sheet$Description[character_choice()]
+    #                )
+    #         )
+    # 
+    # # Print updated state to server
+    # print(character_choice())
+    # print(game_stage())
+    # print(context())
+    # } #/ if character select
+
+  observeEvent(input$chat_user_input, {
+    if(game_stage()=="gameplay") {
+      row_number <- (script_row() %>% as.numeric()) + 1
+    stream <- chat$stream_async(input$chat_user_input)
+        print(paste0(story_data$Prompt[row_number]
+                     )
+              )
+     chat_append("chat", paste0(story_data$Prompt[script_row()])) # delivers verbatim output
+     chat_append("chat", stream) # delivers chat output.
+      
+      #read the user prompt
+      # evaluate the user prompt
+      # give the text based user prompt evaluation
+      # give the qualitative user prompt evaluation
+      # script row + 1
+      # Check to see if we're at the last row of the script, if so then change game_stage("wrap up")
+     
+     context(
+          paste0(context(),
+                 story_data$Prompt[script_row()],
+                 "And the user said: ",
+                 input$chat_user_input
+          
+                
+                       )
+                )
+     
+     goal <- story_data$Goal[i]
+     
+     relevant_skill = story_data$Relevant_skill[i]
+     
+     relevant_skill_level = character_data_selected %>%
+       select(all_of(relevant_skill)) %>%
+       as.numeric()
+     
+     yield("...thinking...")
+     await(async_sleep(0.02))
+     
+     success <- input_evaluation_function(
+       goal = goal,
+       context = context,
+       user_input = user_input,
+       challenge_difficulty = story_data$Difficulty[i],
+       relevant_skill = relevant_skill_level
+     )
+     
+     response <- response_generate_function(
+       goal = goal,
+       context = context,
+       user_input = user_input,
+       success = success
+     )
+     
+     # Show model explanation
+     
+     print(response)
+    }
+    
+    
+  })
+  
+  # observe event (skip button)
+}
 
 shinyApp(ui, server)
-
-# Let's Play --------------------------------------------------------------
-
-play_game()
-
-play_game(story_data = unicorn_story)
 

@@ -31,9 +31,10 @@ input_evaluation_format <- list(
 input_evaluation_function <- function(goal = "Light the rocket fuse and get away without being blown up before it explodes.", 
                                   context = "There is a huge moon rocket. You want to launch it to the moon. It has a fuse. You need to light 
                                   the fuse and get away before it launches, otherwise you'll be blown up.", 
-                                  user_input = "I get on a vespa and drive past the rocket real fast and light the fuse with a flame thrower as I drive away.",
-                                  challenge_difficulty = 15,
-                                  relevant_skill = 2){
+                                  user_input = "I get on a vespa and drive past the rocket real fast and light the fuse with a flame thrower as I drive away."#,
+                                 # challenge_difficulty = 15,
+                                 # relevant_skill = 2
+                                 ){
   
   full_prompt <-
     paste0(
@@ -66,18 +67,20 @@ input_evaluation_function <- function(goal = "Light the rocket fuse and get away
     )
   
 
-  resp <- generate("llama3.2",
+  resp <- generate("mistral",
                    format = input_evaluation_format,
                    full_prompt,
                    output = "text"
   )
   
-  input_value <- jsonlite::fromJSON(resp) %>%
+   input_value <- jsonlite::fromJSON(resp) %>%
     as.numeric()
-  
-  random_value <- sample(1:20,1)
-  
-  (input_value + relevant_skill + random_value) >= challenge_difficulty
+   
+   return(input_value)
+  # 
+  # random_value <- sample(1:20,1)
+  # 
+  # (input_value + relevant_skill + random_value) >= challenge_difficulty
   
 }
 
@@ -85,10 +88,16 @@ input_evaluation_function <- function(goal = "Light the rocket fuse and get away
 
 
 success_response_prompt <- 
-  'Based on the context, character, and user input, explain how it was that the character was successful in achieving the goal. Be creative and silly in explaining how the action was successful. Only consider the most recent goal. Return only a string.'
+  'Based on incontrovertable math, the character achieved the goal! Based on the context, character, and user input, explain how it was that the character was successful in achieving the goal. 
+
+Be creative and silly in explaining how the action was successful. Only consider the most recent goal. 
+
+Return only a string.'
 
 failure_response_prompt <- 
-  'Based on the context, character, and user input, explain how it was that the character was successful in achieving the goal. Be creative and silly in explaining how the action was not successful. Only consider the most recent goal. Return only a string.'
+  'Based on incontrovertable math, the character failed to achieve the goal! Based on the context, character, and user input, explain how it was that the character was unsuccessful in achieving the goal. 
+
+Be creative and silly in explaining how the action was not successful. Only consider the most recent goal. Return only a string.'
 
 success_failure_format <- list(
   type = "object",
@@ -137,7 +146,7 @@ response_generate_function <- function(goal = "Light the rocket fuse and get awa
     )
   
   
-  resp <- generate("llama3.2",
+  resp <- generate("mistral",
                    format = success_failure_format,
                    full_prompt,
                    output = "text"
@@ -164,22 +173,25 @@ play_game <- function(story_data = Animal_Heist_story_sheet,
   
   print("Choose your character!")
   
-  print(character_data$Character)
+  print(paste0(seq_along(Animal_Heist_skill_sheet$Character),
+                               ") ",
+                               Animal_Heist_skill_sheet$Character, collapse = ", "))
   
   
   
   character_choice_number <- readline(paste0(
-                               "Enter 1 to ",nrow(character_data),": "
+                               "Enter 1 to ",nrow(character_data),": \n"
                                )
                                )
   
   character_data_selected <- character_data[character_choice_number,]
-    
 
-  character_prompt <- paste0("The user has chosen the character :", 
+  character_prompt <- paste0("The user has chosen the character: \n", 
                              character_data_selected$Character, 
-                             " which has the characteristics of ",
+                             "\n which has the characteristics of \n",
                              character_data_selected$Description)
+  
+  print(character_prompt)
   
   
   for(i in 1:nrow(story_data)){
@@ -190,7 +202,7 @@ play_game <- function(story_data = Animal_Heist_story_sheet,
       mutate(responses = "")
     
     repeat{
-      user_input <- readline("\nWhat do you do? (or type 's' to skip or 'q' to quit): ")
+      user_input <- readline("What do you do? (or type 's' to skip or 'q' to quit): \n")
       
       if (tolower(user_input) == "s") {
         cat("\nMoving on!\n")
@@ -219,13 +231,29 @@ play_game <- function(story_data = Animal_Heist_story_sheet,
         as.numeric()
       
       print("...thinking...")
-      success <- input_evaluation_function(
+      input_value <- input_evaluation_function(
         goal = goal,
         context = context,
-        user_input = user_input,
-        challenge_difficulty = story_data$Difficulty[i],
-        relevant_skill = relevant_skill_level
+        user_input = user_input#,
+        #challenge_difficulty = story_data$Difficulty[i],
+       # relevant_skill = relevant_skill_level
+      ) 
+      
+      #print(input_value)
+    
+      random_value <- sample(1:10,1)
+      
+      success <- ((input_value + relevant_skill_level + random_value) >= story_data$Difficulty[i])
+      
+      cat(
+        paste0(
+          "Your idea had strength ",input_value," out of 10.",
+          " and your character's skill level was ",relevant_skill_level,
+          " for the skill of ",relevant_skill,". ",
+          " And you had luck of ",random_value," out of 10."
+        )
       )
+      
       
       response <- response_generate_function(
         goal = goal,
@@ -255,7 +283,7 @@ play_game <- function(story_data = Animal_Heist_story_sheet,
     }
     
     if(i == nrow(story_data)){
-      print("Well, that's all the story there is for now!")
+      cat("Well, that's all the story there is for now!")
     }
   }
 }
@@ -265,5 +293,5 @@ play_game <- function(story_data = Animal_Heist_story_sheet,
 
 play_game()
 
-play_game(story_data = unicorn_story)
+#play_game(story_data = unicorn_story)
 
