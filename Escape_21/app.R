@@ -8,6 +8,7 @@ library(ollamar)
 options(ollamar_server = "http://localhost:11434")
 #"http://localhost:11434")
 
+
 # Configure model name - change this to match your installed model
 # Common options: "llama3.2", "mistral", "ministral", "phi", etc.
 OLLAMA_MODEL <- "mistral"  # Change this if needed
